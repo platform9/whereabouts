@@ -433,6 +433,7 @@ RETRYLOOP:
 	for j := 0; j < storage.DatastoreRetries; j++ {
 		select {
 		case <-ctx.Done():
+			logging.Debugf("context timeout: newip = %v error = %v", newip, err)
 			return newip, err
 		default:
 			// retry the IPAM loop if the context has not been cancelled
