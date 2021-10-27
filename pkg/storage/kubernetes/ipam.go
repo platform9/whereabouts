@@ -468,6 +468,7 @@ func IPManagementKubernetesUpdate(ctx context.Context, mode int, ipam *Kubernete
 
 			reservelist := pool.Allocations()
 			reservelist = append(reservelist, overlappingrangeallocations...)
+			logging.Debugf("PF9: Current Allocations: %v", reservelist)
 			var updatedreservelist []whereaboutstypes.IPReservation
 			switch mode {
 			case whereaboutstypes.Allocate:
@@ -504,6 +505,8 @@ func IPManagementKubernetesUpdate(ctx context.Context, mode int, ipam *Kubernete
 				}
 			}
 
+			logging.Debugf("PF9: updatedreservelist: %v", updatedreservelist)
+
 			// Clean out any dummy records from the reservelist...
 			var usereservelist []whereaboutstypes.IPReservation
 			for _, rl := range updatedreservelist {
@@ -518,6 +521,7 @@ func IPManagementKubernetesUpdate(ctx context.Context, mode int, ipam *Kubernete
 			}
 
 			err = pool.Update(requestCtx, usereservelist)
+			logging.Debugf("PF9: New reservelist: %v", usereservelist)
 			if err != nil {
 				logging.Errorf("IPAM error updating pool (attempt: %d): %v", j, err)
 				if e, ok := err.(storage.Temporary); ok && e.Temporary() {
