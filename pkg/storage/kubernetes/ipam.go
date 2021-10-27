@@ -456,6 +456,7 @@ RETRYLOOP:
 
 		reservelist := pool.Allocations()
 		reservelist = append(reservelist, overlappingrangeallocations...)
+        logging.Debugf("PF9: Current Allocations: %v", reservelist)
 		var updatedreservelist []whereaboutstypes.IPReservation
 		switch mode {
 		case whereaboutstypes.Allocate:
@@ -492,6 +493,8 @@ RETRYLOOP:
 			}
 		}
 
+        logging.Debugf("PF9: updatedreservelist: %v", updatedreservelist)
+
 		// Clean out any dummy records from the reservelist...
 		var usereservelist []whereaboutstypes.IPReservation
 		for _, rl := range updatedreservelist {
@@ -501,6 +504,7 @@ RETRYLOOP:
 		}
 
 		err = pool.Update(ctx, usereservelist)
+        logging.Debugf("PF9: New reservelist: %v", usereservelist)
 		if err != nil {
 			logging.Errorf("IPAM error updating pool (attempt: %d): %v", j, err)
 			if e, ok := err.(storage.Temporary); ok && e.Temporary() {
