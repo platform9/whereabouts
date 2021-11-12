@@ -90,6 +90,9 @@ func (rl *ReconcileLooper) findOrphanedIPsPerPool(ipPools []storage.IPPool) erro
 func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 	for livePodRef, livePod := range rl.liveWhereaboutsPods {
 		if podRef == livePodRef {
+			if livePod.phase == v1.PodPending {
+				return true
+			}
 			livePodIPs := livePod.ips
 			logging.Debugf(
 				"pod reference %s matches allocation; Allocation IP: %s; PodIPs: %s",
