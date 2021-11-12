@@ -102,6 +102,10 @@ func (rl *ReconcileLooper) findOrphanedIPsPerPool(ipPools []storage.IPPool) erro
 func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 	for livePodRef, livePod := range rl.liveWhereaboutsPods {
 		if podRef == livePodRef {
+			if livePod.phase == v1.PodPending {
+				logging.Debugf("PF9: Skipping Pod IP check for Pending Pod: %s IP: %s", livePodRef, ip)
+				return true
+			}
 			livePodIPs := livePod.ips
 			logging.Debugf(
 				"pod reference %s matches allocation; Allocation IP: %s; PodIPs: %s",
