@@ -129,6 +129,7 @@ func (i *KubernetesIPAM) getPool(ctx context.Context, name string, iprange strin
 	} else if err != nil {
 		return nil, fmt.Errorf("k8s get error: %s", err)
 	}
+	logging.Debugf("PF9: GetIpPool: %+v", pool)
 	return pool, nil
 }
 
@@ -253,7 +254,7 @@ func (p *KubernetesIPPool) Update(ctx context.Context, reservations []whereabout
 	if err != nil {
 		return err
 	}
-
+	logging.Debugf("PF9: patch = %s", patch)
 	// add additional tests to the patch
 	ops := []jsonpatch.Operation{
 		// ensure patch is applied to appropriate resource version only
@@ -281,7 +282,7 @@ func (p *KubernetesIPPool) Update(ctx context.Context, reservations []whereabout
 		}
 		return err
 	}
-
+	logging.Debugf("PF9: wrote patchdata: %s", patchData)
 	return nil
 }
 
@@ -425,17 +426,19 @@ func IPManagementKubernetesUpdate(mode int, ipam *KubernetesIPAM, ipamConf where
 		logging.Errorf("IPAM connectivity error: %v", err)
 		return newip, err
 	}
-
+	logging.Debugf("PF9: DatastoreRetries = %d", storage.DatastoreRetries)
 	// handle the ip add/del until successful
 	var overlappingrangeallocations []whereaboutstypes.IPReservation
 	var ipforoverlappingrangeupdate net.IP
 RETRYLOOP:
 	for j := 0; j < storage.DatastoreRetries; j++ {
+		logging.Debugf("PF9: j = %d", j)
 		select {
 		case <-ctx.Done():
 			logging.Debugf("context timeout: newip = %v error = %v", newip, err)
 			return newip, err
 		default:
+			logging.Debugf("PF9: default case")
 			// retry the IPAM loop if the context has not been cancelled
 		}
 
@@ -522,6 +525,14 @@ RETRYLOOP:
 			return newip, err
 		}
 	}
+	logging.Debugf("PF9: re-getting IPPool...")
+	pool, err = ipam.GetIPPool(ctx, ipamConf.Range)
+	if err != nil {
+		logging.Debugf("PF9: IPAM error reading pool allocations %v", err)
+	}
+
+	reservelist := pool.Allocations()
+	logging.Debugf("PF9: AFTER PATCH Allocations: %v", reservelist)
 
 	return newip, err
 }
