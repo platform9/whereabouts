@@ -148,6 +148,7 @@ func (i *KubernetesIPAM) getPool(ctx context.Context, name string, iprange strin
 	} else if err != nil {
 		return nil, fmt.Errorf("k8s get error: %s", err)
 	}
+	logging.Debugf("PF9: GetIpPool: %+v", pool)
 	return pool, nil
 }
 
@@ -267,7 +268,7 @@ func (p *KubernetesIPPool) Update(ctx context.Context, reservations []whereabout
 	if err != nil {
 		return err
 	}
-
+	logging.Debugf("PF9: patch = %s", patch)
 	// add additional tests to the patch
 	ops := []jsonpatch.Operation{
 		// ensure patch is applied to appropriate resource version only
@@ -295,7 +296,7 @@ func (p *KubernetesIPPool) Update(ctx context.Context, reservations []whereabout
 		}
 		return err
 	}
-
+	logging.Debugf("PF9: wrote patchdata: %s", patchData)
 	return nil
 }
 
@@ -437,17 +438,20 @@ func IPManagementKubernetesUpdate(ctx context.Context, mode int, ipam *Kubernete
 		logging.Errorf("IPAM connectivity error: %v", err)
 		return newips, err
 	}
-
+	logging.Debugf("PF9: DatastoreRetries = %d", storage.DatastoreRetries)
 	// handle the ip add/del until successful
 	var overlappingrangeallocations []whereaboutstypes.IPReservation
 	var ipforoverlappingrangeupdate net.IP
 	for _, ipRange := range ipamConf.IPRanges {
 	RETRYLOOP:
 		for j := 0; j < storage.DatastoreRetries; j++ {
+			logging.Debugf("PF9: j = %d", j)
 			select {
 			case <-ctx.Done():
+				logging.Debugf("PF9: context timeout: newips = %v error = %v", newips, err)
 				break RETRYLOOP
 			default:
+				logging.Debugf("PF9: default case")
 				// retry the IPAM loop if the context has not been cancelled
 			}
 
@@ -457,6 +461,7 @@ func IPManagementKubernetesUpdate(ctx context.Context, mode int, ipam *Kubernete
 				return newips, err
 			}
 
+			logging.Debugf("PF9: re-getting IPPool...")
 			pool, err = ipam.GetIPPool(requestCtx, ipRange.Range)
 			if err != nil {
 				logging.Errorf("IPAM error reading pool allocations (attempt: %d): %v", j, err)
@@ -467,6 +472,7 @@ func IPManagementKubernetesUpdate(ctx context.Context, mode int, ipam *Kubernete
 			}
 
 			reservelist := pool.Allocations()
+			logging.Debugf("PF9: AFTER PATCH Allocations: %v", reservelist)
 			reservelist = append(reservelist, overlappingrangeallocations...)
 			logging.Debugf("PF9: Current Allocations: %v", reservelist)
 			var updatedreservelist []whereaboutstypes.IPReservation
