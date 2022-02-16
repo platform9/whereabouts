@@ -100,7 +100,10 @@ func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 				for retries < 3 {
 					retries += 1
 					newWrappedPod := rl.refreshPod(livePodRef)
-					if newWrappedPod.phase != v1.PodPending {
+					if newWrappedPod == nil {
+						logging.Debugf("PF9: Could not find matching podRef, cleaning up...")
+						break
+					} else if newWrappedPod.phase != v1.PodPending {
 						logging.Debugf("PF9: Pending Pod is now in phase: %s", newWrappedPod.phase)
 						break
 					}
@@ -122,6 +125,7 @@ func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 func (rl ReconcileLooper) refreshPod(podRef string) *podWrapper {
 	namespace, podName := splitPodRef(podRef)
 	if namespace == "" || podName == "" {
+		logging.Errorf("Invalid podRef format: %s", podRef)
 		return nil
 	}
 
