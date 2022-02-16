@@ -26,7 +26,7 @@ type void struct{}
 
 func wrapPod(pod v1.Pod) *podWrapper {
 	return &podWrapper{
-		ips: getFlatIPSet(pod),
+		ips:   getFlatIPSet(pod),
 		phase: pod.Status.Phase,
 	}
 }
@@ -75,8 +75,19 @@ func getFlatIPSet(pod v1.Pod) map[string]void {
 
 		for _, ip := range network.IPs {
 			ipSet[ip] = empty
-            logging.Debugf("Added IP %s for pod %s", ip, composePodRef(pod))
+			logging.Debugf("Added IP %s for pod %s", ip, composePodRef(pod))
 		}
 	}
 	return ipSet
+}
+
+func isIpOnPod(livePod *podWrapper, podRef, ip string) bool {
+	livePodIPs := livePod.ips
+	logging.Debugf(
+		"pod reference %s matches allocation; Allocation IP: %s; PodIPs: %s",
+		podRef,
+		ip,
+		livePodIPs)
+	_, isFound := livePodIPs[ip]
+	return isFound
 }
