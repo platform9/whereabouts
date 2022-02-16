@@ -91,8 +91,20 @@ func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 	for livePodRef, livePod := range rl.liveWhereaboutsPods {
 		if podRef == livePodRef {
 			if livePod.phase == v1.PodPending {
-				logging.Debugf("PF9: Skipping Pod IP check for Pending Pod: %s IP: %s", livePodRef, ip)
-				return true
+				/* Sometimes pods are still coming up, and may not yet have Multus
+				 * annotation added to it yet. We don't weant to check the IPs yet
+				 * so re-fetch the Pod 3x until not Pending
+				 */
+				logging.Debugf("PF9: Re-fetching Pending Pod: %s IP-to-match: %s", livePodRef, ip)
+				var retries int = 0
+				for retries < 3 {
+					retries += 1
+					newWrappedPod := rl.refreshPod(livePodRef)
+					if newWrappedPod.phase != v1.PodPending {
+						logging.Debugf("PF9: Pending Pod is now in phase: %s", newWrappedPod.phase)
+						break
+					}
+				}
 			}
 			livePodIPs := livePod.ips
 			logging.Debugf(
@@ -105,6 +117,35 @@ func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 		}
 	}
 	return false
+}
+
+func (rl ReconcileLooper) refreshPod(podRef string) *podWrapper {
+	namespace, podName := splitPodRef(podRef)
+	if namespace == "" || podName == "" {
+		return nil
+	}
+
+	pod, err := rl.k8sClient.GetPod(namespace, podName)
+	if err != nil {
+		logging.Errorf("Failed to refresh Pod %s: %s\n", podRef, err)
+		return nil
+	}
+
+	wrappedPod := wrapPod(*pod)
+	logging.Debugf("Got refreshed pod: %v", wrappedPod)
+	return wrappedPod
+}
+
+func splitPodRef(podRef string) (string, string) {
+	var namespace string
+	var podName string
+
+	n, err := fmt.Sscanf(podRef, "%s/%s", &namespace, &podName)
+	if n != 2 || err != nil {
+		logging.Errorf("Failed to split podRef %s: %s", podRef, err)
+		return "", ""
+	}
+	return namespace, podName
 }
 
 func composePodRef(pod v1.Pod) string {
