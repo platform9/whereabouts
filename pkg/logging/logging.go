@@ -21,6 +21,9 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 // Level type
@@ -79,26 +82,26 @@ func Printf(level Level, format string, a ...interface{}) {
 
 // Debugf defines our printf for debug level.
 func Debugf(format string, a ...interface{}) {
-	Printf(DebugLevel, format, a...)
+	zap.S().Debugf(format, a...)
 }
 
 // Verbosef defines our printf for Verbose level.
 func Verbosef(format string, a ...interface{}) {
-	Printf(VerboseLevel, format, a...)
+	zap.S().Warnf(format, a...)
 }
 
 // Errorf defines our printf for error level.
 func Errorf(format string, a ...interface{}) error {
-	Printf(ErrorLevel, format, a...)
+	zap.S().Errorf(format, a...)
 	return fmt.Errorf(format, a...)
 }
 
 // Panicf defines our printf for panic level.
 func Panicf(format string, a ...interface{}) {
-	Printf(PanicLevel, format, a...)
-	Printf(PanicLevel, "========= Stack trace output ========")
-	Printf(PanicLevel, "%+v", errors.New("Whereabouts Panic"))
-	Printf(PanicLevel, "========= Stack trace output end ========")
+	zap.S().Panicf(format, a...)
+	zap.S().Panicf("========= Stack trace output ========")
+	zap.S().Panicf("%+v", errors.New("Whereabouts Panic"))
+	zap.S().Panicf("========= Stack trace output end ========")
 }
 
 // GetLoggingLevel returns loggingLevel
@@ -146,6 +149,28 @@ func SetLogFile(filename string) {
 		fmt.Fprintf(os.Stderr, "Whereabouts logging: cannot open %s", filename)
 	}
 	loggingFp = fp
+}
+
+func ConfigureLogger(logFile string) {
+	w := zapcore.AddSync(&lumberjack.Logger{
+		Filename:   logFile,
+		MaxSize:    100, // mb
+		MaxBackups: 5,
+		MaxAge:     30,
+		Compress:   true,
+	})
+
+    core := zapcore.NewCore(
+      zapcore.NewConsoleEncoder(zap.NewDevelopmentEncoderConfig()),
+      w,
+      zap.DebugLevel,
+    )
+
+    logger := zap.New(core)
+    defer logger.Sync()
+    zap.ReplaceGlobals(logger)
+    zap.S().Debugf("Started zap logger")
+    return
 }
 
 func init() {

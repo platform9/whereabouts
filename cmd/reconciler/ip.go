@@ -20,7 +20,7 @@ func main() {
 		os.Exit(kubeconfigNotFound)
 	}
 
-	logging.SetLogFile(*logFile)
+	logging.ConfigureLogger(*logFile)
 
 	ctx, cancel := context.WithTimeout(context.Background(), storage.RequestTimeout)
 	defer cancel()
