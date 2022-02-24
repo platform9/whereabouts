@@ -70,9 +70,6 @@ func LoadIPAMConfig(bytes []byte, envArgs string, extraConfigPaths ...string) (*
 	if n.IPAM.LogFile != "" {
 		logging.ConfigureLogger(n.IPAM.LogFile)
 	}
-	if n.IPAM.LogLevel != "" {
-		logging.SetLogLevel(n.IPAM.LogLevel)
-	}
 
 	if foundflatfile != "" {
 		logging.Debugf("Used defaults from parsed flat file config @ %s", foundflatfile)
