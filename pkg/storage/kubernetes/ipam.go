@@ -176,7 +176,7 @@ func (i *KubernetesIPAM) GetOverlappingRangeStore() (storage.OverlappingRangeSto
 }
 
 // IsAllocatedInOverlappingRange checks for IP addresses to see if they're allocated cluster wide, for overlapping ranges
-func (c *KubernetesOverlappingRangeStore) IsAllocatedInOverlappingRange(ctx context.Context, ip net.IP) (bool, error) {
+func (c *KubernetesOverlappingRangeStore) IsAllocatedInOverlappingRange(ctx context.Context, ip net.IP, podRef string) (bool, error) {
 
 	// IPv6 doesn't make for valid CR names, so normalize it.
 	normalizedip := strings.ReplaceAll(fmt.Sprint(ip), ":", "-")
@@ -191,6 +191,11 @@ func (c *KubernetesOverlappingRangeStore) IsAllocatedInOverlappingRange(ctx cont
 	} else if err != nil {
 		logging.Errorf("k8s get OverlappingRangeIPReservation error: %s", err)
 		return false, fmt.Errorf("k8s get OverlappingRangeIPReservation error: %s", err)
+	}
+
+	if clusteripres.Spec.PodRef == podRef {
+		logging.Debugf("IP %v matches existing podRef %s", ip, podRef)
+		return false, nil
 	}
 
 	logging.Debugf("IP %v is reserved cluster wide.", ip)
