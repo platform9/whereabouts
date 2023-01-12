@@ -87,7 +87,7 @@ func (i *ETCDIPAM) GetOverlappingRangeStore() (OverlappingRangeStore, error) {
 }
 
 // IsAllocatedInOverlappingRange checks to see if the IP is allocated across the whole cluster (and not just the current range)
-func (i *EtcdOverlappingRangeStore) IsAllocatedInOverlappingRange(ctx context.Context, ip net.IP) (bool, error) {
+func (i *EtcdOverlappingRangeStore) IsAllocatedInOverlappingRange(ctx context.Context, ip net.IP, podRef string) (bool, error) {
 	logging.Debugf("ETCD IsAllocatedInOverlappingRange is NOT IMPLEMENTED!!!! TODO")
 	return false, nil
 }
