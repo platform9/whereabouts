@@ -141,7 +141,7 @@ func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 				livePodRef,
 				ip,
 				livePodIPs)
-			_, isFound := livePodIPs[ip]
+			_, isFound = livePodIPs[ip]
 			return isFound || livePod.phase == v1.PodPending
 		}
 	}
@@ -181,7 +181,7 @@ func composePodRef(pod v1.Pod) string {
 }
 
 func (rl ReconcileLooper) ReconcileIPPools(ctx context.Context) ([]net.IP, error) {
-	matchByPodRef := func(reservations []types.IPReservation, podRef string) int {
+	matchByContainerID := func(reservations []types.IPReservation, cid string) int {
 		foundidx := -1
 		for idx, v := range reservations {
 			if v.ContainerID == cid {
