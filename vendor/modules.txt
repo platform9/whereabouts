@@ -188,8 +188,8 @@ golang.org/x/net/http2/hpack
 golang.org/x/net/idna
 golang.org/x/net/internal/timeseries
 golang.org/x/net/trace
-# golang.org/x/oauth2 v0.0.0-20180821212333-d2e6202438be
-## explicit
+# golang.org/x/oauth2 v0.0.0-20190402181905-9f3314589c9a
+## explicit; go 1.11
 golang.org/x/oauth2
 golang.org/x/oauth2/internal
 # golang.org/x/sys v0.7.0
@@ -229,7 +229,7 @@ golang.org/x/time/rate
 # gomodules.xyz/jsonpatch/v2 v2.0.1
 ## explicit; go 1.12
 gomodules.xyz/jsonpatch/v2
-# google.golang.org/appengine v1.4.0
+# google.golang.org/appengine v1.5.0
 ## explicit
 google.golang.org/appengine/internal
 google.golang.org/appengine/internal/base
@@ -286,10 +286,10 @@ gopkg.in/inf.v0
 # gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7
 ## explicit
 gopkg.in/tomb.v1
-# gopkg.in/yaml.v2 v2.2.4
+# gopkg.in/yaml.v2 v2.2.8
 ## explicit
 gopkg.in/yaml.v2
-# k8s.io/api v0.0.0-20190409021203-6e4e0e4f393b
+# k8s.io/api v0.0.0-20191004102349-159aefb8556b
 ## explicit
 k8s.io/api/admissionregistration/v1beta1
 k8s.io/api/apps/v1
@@ -334,13 +334,14 @@ k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1beta1
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/scheme
 k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset/typed/apiextensions/v1beta1
-# k8s.io/apimachinery v0.0.0-20190927203648-9ce6eca90e73
-## explicit; go 1.12
+# k8s.io/apimachinery v0.0.0-20191004074956-c5d2f014d689
+## explicit
 k8s.io/apimachinery/pkg/api/errors
 k8s.io/apimachinery/pkg/api/meta
 k8s.io/apimachinery/pkg/api/resource
 k8s.io/apimachinery/pkg/apis/meta/v1
 k8s.io/apimachinery/pkg/apis/meta/v1/unstructured
+k8s.io/apimachinery/pkg/apis/meta/v1beta1
 k8s.io/apimachinery/pkg/conversion
 k8s.io/apimachinery/pkg/conversion/queryparams
 k8s.io/apimachinery/pkg/fields
