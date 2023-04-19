@@ -7,7 +7,7 @@ version ?= $(shell git describe --tags HEAD |  sed 's/-.*//')
 registry_url ?= docker.io
 
 image_name = ${registry_url}/platform9/whereabouts
-image_tag = $(version)-pmk-$(TEAMCITY_BUILD_ID)
+image_tag = v0.4.11
 
 SRC_ROOT=$(abspath $(dir $(lastword $(MAKEFILE_LIST)))/)
 BUILD_ROOT = $(SRC_ROOT)/build
