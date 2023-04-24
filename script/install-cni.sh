@@ -103,7 +103,7 @@ EOF
   "kubernetes": {
     "kubeconfig": "${WHEREABOUTS_KUBECONFIG_LITERAL}"
   },
-  "reconciler_cron_expression": "30 4 * * *"
+  "reconciler_cron_expression": "30 4 * * *",
   "log_file": "/tmp/whereabouts.log",
   "log_level": "debug"
 }
