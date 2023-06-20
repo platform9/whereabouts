@@ -61,6 +61,18 @@ func getFlatIPSet(pod v1.Pod) map[string]void {
 	var empty void
 	ipSet := map[string]void{}
 	networkStatusAnnotationValue := []byte(pod.Annotations[MultusNetworkStatusAnnotation])
+
+	retries := 0
+	maxRetries := 10
+	for retries < maxRetries {
+		retries += 1
+		if networkStatusAnnotationValue == nil {
+			networkStatusAnnotationValue = []byte(pod.Annotations[MultusNetworkStatusAnnotation])
+		} else {
+			break
+		}
+	}
+
 	var networkStatusList []k8snetworkplumbingwgv1.NetworkStatus
 	if err := json.Unmarshal(networkStatusAnnotationValue, &networkStatusList); err != nil {
 		_ = logging.Errorf("could not parse network annotation %s for pod: %s; error: %v", networkStatusAnnotationValue, composePodRef(pod), err)
