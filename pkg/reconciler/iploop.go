@@ -92,6 +92,7 @@ func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 	for livePodRef, livePod := range rl.liveWhereaboutsPods {
 		if podRef == livePodRef {
 			livePodIPs := livePod.ips
+			logging.Debugf("This is the log from updated upstream isPodAlive function.")
 			logging.Debugf(
 				"pod reference %s matches allocation; Allocation IP: %s; PodIPs: %s",
 				livePodRef,
