@@ -1,4 +1,4 @@
-FROM golang:1.17
+FROM golang:1.19
 ADD . /usr/src/whereabouts
 RUN mkdir -p $GOPATH/src/github.com/dougbtv/whereabouts
 WORKDIR $GOPATH/src/github.com/dougbtv/whereabouts
