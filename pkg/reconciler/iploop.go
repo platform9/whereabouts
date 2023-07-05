@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/dougbtv/whereabouts/pkg/allocate"
 	whereaboutsv1alpha1 "github.com/dougbtv/whereabouts/pkg/api/v1alpha1"
@@ -92,40 +91,15 @@ func (rl *ReconcileLooper) findOrphanedIPsPerPool(ipPools []storage.IPPool) erro
 func (rl ReconcileLooper) isPodAlive(podRef string, ip string) bool {
 	for livePodRef, livePod := range rl.liveWhereaboutsPods {
 		if podRef == livePodRef {
-			isFound := isIpOnPod(&livePod, podRef, ip)
-			if !isFound && (livePod.phase == v1.PodPending) {
-				/* Sometimes pods are still coming up, and may not yet have Multus
-				 * annotation added to it yet. We don't want to check the IPs yet
-				 * so re-fetch the Pod 5x
-				 */
-				podToMatch := &livePod
-				retries := 0
-
-				logging.Debugf("Re-fetching Pending Pod: %s IP-to-match: %s", livePodRef, ip)
-
-				for retries < storage.PodRefreshRetries {
-					retries += 1
-					podToMatch = rl.refreshPod(livePodRef)
-					if podToMatch == nil {
-						logging.Debugf("Cleaning up...")
-						return false
-					} else if podToMatch.phase != v1.PodPending {
-						logging.Debugf("Pending Pod is now in phase: %s", podToMatch.phase)
-						break
-					} else {
-						isFound = isIpOnPod(podToMatch, podRef, ip)
-						// Short-circuit - Pending Pod may have IP now
-						if isFound {
-							logging.Debugf("Pod now has IP annotation while in Pending")
-							return true
-						}
-						time.Sleep(time.Duration(500) * time.Millisecond)
-					}
-				}
-				isFound = isIpOnPod(podToMatch, podRef, ip)
-			}
-
-			return isFound
+			livePodIPs := livePod.ips
+			logging.Debugf("This is the log from updated upstream isPodAlive function.")
+			logging.Debugf(
+				"pod reference %s matches allocation; Allocation IP: %s; PodIPs: %s",
+				livePodRef,
+				ip,
+				livePodIPs)
+			_, isFound := livePodIPs[ip]
+			return isFound || livePod.phase == v1.PodPending
 		}
 	}
 	return false
