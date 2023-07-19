@@ -12,6 +12,7 @@ image_tag = $(version)-pmk-$(TEAMCITY_BUILD_ID)
 SRC_ROOT=$(abspath $(dir $(lastword $(MAKEFILE_LIST)))/)
 BUILD_ROOT = $(SRC_ROOT)/build
 TAG=$(image_name):${image_tag}
+COMPUTE_NODES ?= 2
 
 
 build:
@@ -26,6 +27,10 @@ install-tools:
 
 test: build install-tools
 	hack/test-go.sh
+
+kind:
+	hack/e2e-setup-kind-cluster.sh -n $(COMPUTE_NODES)
+
 image:
 	@echo $(TAG)
 	docker build -t $(TAG) .
