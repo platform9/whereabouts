@@ -188,10 +188,12 @@ func (rl ReconcileLooper) ReconcileIPPools(ctx context.Context) ([]net.IP, error
 	var err error
 	var totalCleanedUpIps []net.IP
 	for _, orphanedIP := range rl.orphanedIPs {
+		// !bang: Reportedly: This the order returned from the below line is not fixed.
 		currentIPReservations := orphanedIP.Pool.Allocations()
 		podRefsToDeallocate := findOutPodRefsToDeallocateIPsFrom(orphanedIP)
 		var deallocatedIP net.IP
 		for _, podRef := range podRefsToDeallocate {
+			// !bang: This means it may cause the in-use pod ip to be wrongly claimed
 			currentIPReservations, deallocatedIP, err = allocate.IterateForDeallocation(currentIPReservations, podRef, matchByPodRef)
 			if err != nil {
 				return nil, err
