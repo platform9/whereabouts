@@ -200,11 +200,18 @@ func (i *KubernetesIPAM) GetOverlappingRangeStore() (storage.OverlappingRangeSto
 // IsAllocatedInOverlappingRange checks for IP addresses to see if they're allocated cluster wide, for overlapping ranges
 func (c *KubernetesOverlappingRangeStore) IsAllocatedInOverlappingRange(ctx context.Context, ip net.IP, podRef string) (bool, error) {
 
-	logging.Debugf("OverlappingRangewide allocation check; normalized IP: %q, IP: %q, networkName: %q",
-		normalizedIP, ip, networkName)
+	// IPv6 doesn't make for valid CR names, so normalize it.
+	normalizedip := strings.ReplaceAll(fmt.Sprint(ip), ":", "-")
 
-	_, err := c.client.WhereaboutsV1alpha1().OverlappingRangeIPReservations(c.namespace).Get(ctx, normalizedIP, metav1.GetOptions{})
-	if err != nil && errors.IsNotFound(err) {
+	logging.Debugf("OverlappingRangewide allocation check for IP: %v", normalizedip)
+
+	// clusteripres := &whereaboutsv1alpha1.OverlappingRangeIPReservation{
+	// 	ObjectMeta: metav1.ObjectMeta{Name: normalizedip, Namespace: i.namespace},
+	// }
+	clusteripres := &whereaboutsv1alpha1.OverlappingRangeIPReservation{
+		ObjectMeta: metav1.ObjectMeta{Name: normalizedip, Namespace: c.namespace},
+	}
+	if err := c.client.Get(ctx, types.NamespacedName{Name: normalizedip, Namespace: c.namespace}, clusteripres); errors.IsNotFound(err) {
 		// cluster ip reservation does not exist, this appears to be good news.
 		// logging.Debugf("IP %v is not reserved cluster wide, allowing.", ip)
 		return false, nil
@@ -221,6 +228,7 @@ func (c *KubernetesOverlappingRangeStore) IsAllocatedInOverlappingRange(ctx cont
 	logging.Debugf("IP %v is reserved cluster wide.", ip)
 	return true, nil
 }
+
 
 // UpdateOverlappingRangeAllocation updates clusterwide allocation for overlapping ranges.
 func (c *KubernetesOverlappingRangeStore) UpdateOverlappingRangeAllocation(ctx context.Context, mode int, ip net.IP,
