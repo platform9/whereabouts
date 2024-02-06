@@ -1,16 +1,21 @@
-IMAGE_NAME ?= whereabouts
-IMAGE_REGISTRY ?= ghcr.io/k8snetworkplumbingwg
-IMAGE_PULL_POLICY ?= Always
-IMAGE_TAG ?= latest
-COMPUTE_NODES ?= 2
+src_dir=$(shell pwd)
+go_cmd=go
+repo=platform9
+version ?= v0.6
 
-OCI_BIN ?= docker
+#registry_url ?= 514845858982.dkr.ecr.us-west-1.amazonaws.com
+registry_url ?= docker.io
+
+image_name = ${registry_url}/platform9/whereabouts
+image_tag = $(version)-pmk-$(TEAMCITY_BUILD_ID)
+
+SRC_ROOT=$(abspath $(dir $(lastword $(MAKEFILE_LIST)))/)
+BUILD_ROOT = $(SRC_ROOT)/build
+TAG=$(image_name):${image_tag}
+
 
 build:
 	hack/build-go.sh
-
-docker-build:
-	$(OCI_BIN) build -t ${IMAGE_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} -f Dockerfile .
 
 generate-api:
 	hack/verify-codegen.sh
@@ -21,6 +26,16 @@ install-tools:
 
 test: build install-tools
 	hack/test-go.sh
+image:
+	@echo $(TAG)
+	docker build -t $(TAG) .
 
-kind:
-	hack/e2e-setup-kind-cluster.sh -n $(COMPUTE_NODES)
+push: image
+	docker push $(TAG) \
+	&& docker rmi $(TAG)
+
+scan:
+	mkdir -p build
+	mkdir -p build/whereabouts
+	docker run -v $(BUILD_ROOT)/whereabouts:/out -v /var/run/docker.sock:/var/run/docker.sock  aquasec/trivy image -s CRITICAL,HIGH -f json  --vuln-type library -o /out/library_vulnerabilities.json --exit-code 22 ${TAG}
+	docker run -v $(BUILD_ROOT)/whereabouts:/out -v /var/run/docker.sock:/var/run/docker.sock  aquasec/trivy image -s CRITICAL,HIGH -f json  --vuln-type os -o /out/os_vulnerabilities.json --exit-code 22 ${TAG}
