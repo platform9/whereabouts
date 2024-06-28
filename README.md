@@ -1,4 +1,5 @@
 # whereabouts
+
 ![Travis CI status](https://travis-ci.org/k8snetworkplumbingwg/whereabouts.svg?branch=master) ![Go report card](https://goreportcard.com/badge/github.com/k8snetworkplumbingwg/whereabouts)
 
 ![whereabouts-logo](doc/logo.png)
@@ -36,11 +37,11 @@ There's two steps to installing Whereabouts:
 
 Further installation options (including etcd usage) and configuration parameters can be found in the [extended configuration document](doc/extended-configuration.md).
 
-### Installing Whereabouts.
+### Installing Whereabouts
 
 You can install this plugin with a Daemonset, using:
 
-```
+```shell
 git clone https://github.com/k8snetworkplumbingwg/whereabouts && cd whereabouts
 kubectl apply \
     -f doc/crds/daemonset-install.yaml \
@@ -51,14 +52,15 @@ kubectl apply \
 The daemonset installation requires Kubernetes Version 1.16 or later.
 
 ### Installing with helm 3
+
 You can also install multus and whereabouts with helm 3 (helm 2 is not supported)
 
-```
+```shell
+
 git clone https://github.com/k8snetworkplumbingwg/helm-charts.git
 cd helm-charts
 helm upgrade --install multus ./multus  --namespace kube-system
 helm upgrade --install whereabouts ./whereabouts --namespace kube-system
-
 ```
 
 Helm will install the crd as well as the daemonset
@@ -67,7 +69,7 @@ Helm will install the crd as well as the daemonset
 
 Included here is an entire CNI configuration. Whereabouts only cares about the `ipam` section of the CNI config. In particular this example uses the `macvlan` CNI plugin. (If you decide to copy this block and try it too, make sure that the `master` setting is set to a network interface name that exists on your nodes). Typically, you'll already have a CNI configuration for an existing CNI plugin in your cluster, and you'll just copy the `ipam` section and modify the values there.
 
-```
+```YAML
 {
       "cniVersion": "0.3.0",
       "name": "whereaboutsexample",
@@ -91,7 +93,7 @@ Whereabouts is particularly useful in scenarios where you're using additional ne
 
 In short, a `NetworkAttachmentDefinition` contains a CNI configuration packaged into a custom resource. Here's an example of a `NetworkAttachmentDefinition` containing a CNI configuration which uses Whereabouts for IPAM:
 
-```
+```YAML
 apiVersion: "k8s.cni.cncf.io/v1"
 kind: NetworkAttachmentDefinition
 metadata:
@@ -114,7 +116,7 @@ spec:
 
 The same applies for the usage of IPv6:
 
-```
+```YAML
 {
       "cniVersion": "0.3.0",
       "name": "whereaboutsexample",
@@ -133,7 +135,7 @@ The same applies for the usage of IPv6:
 
 `ipRanges` field can be used to provide a list of range configurations for assigning multiple IP addresses.
 
-```
+```YAML
 {
       "cniVersion": "0.3.0",
       "name": "whereaboutsexample",
@@ -153,7 +155,7 @@ The same applies for the usage of IPv6:
 
 The above can also be used in combination with basic `range` field as below:
 
-```
+```YAML
 {
       "cniVersion": "0.3.0",
       "name": "whereaboutsexample",
@@ -176,7 +178,7 @@ The above can also be used in combination with basic `range` field as below:
 
 Similar to above, `ipRanges` can be used for configuring DualStack
 
-```
+```YAML
 {
       "cniVersion": "0.3.0",
       "name": "whereaboutsexample",
@@ -196,7 +198,7 @@ Similar to above, `ipRanges` can be used for configuring DualStack
 
 ## Core Parameters
 
-**Required**
+### Required
 
 These parameters are required:
 
@@ -207,11 +209,11 @@ If for example the `range` is set to `192.168.2.225/28`, this will allocate IP a
 
 If you need a tool to figure out the range of a given CIDR address, try this online tool, [subnet-calculator.com](http://www.subnet-calculator.com/) or an [IPv6 subnet calculator](https://www.vultr.com/resources/subnet-calculator-ipv6/).
 
-**Range end syntax**
+### Range end syntax
 
 Additionally, the `range` parameter can support a CIDR notation that includes the last IP to use. Example: `range: "192.168.2.225-192.168.2.230/28"`.
 
-**Optional**
+### Optional
 
 The following parameters are optional:
 
@@ -245,7 +247,7 @@ CIDR range multiple times.
 
 Parameter `enable_overlapping_ranges` (see above) is scoped per network name.
 
-```
+```YAML
 (...)
     "network_name": "network-with-independent-allocation",
     "enable_overlapping_ranges": true,
@@ -263,13 +265,15 @@ Run the build command from the `./hack` directory:
 ## Running whereabouts CNI in a local kind cluster
 
 You can start a kind cluster to run local changes with:
-```
+
+```shell
 make kind
 # or make kind COMPUTE_NODES=<desired number of worker nodes>
 ```
 
 You can then create a NetworkAttachmentDefinition with:
-```
+
+```YAML
 cat <<'EOF' | kubectl apply -f -
 apiVersion: "k8s.cni.cncf.io/v1"
 kind: NetworkAttachmentDefinition
@@ -291,7 +295,8 @@ EOF
 ```
 
 Create a deployment that uses the NetworkAttachmentDefinition, for example:
-```
+
+```YAML
 cat <<'EOF' | kubectl apply -f -
 apiVersion: apps/v1
 kind: Deployment
@@ -330,7 +335,7 @@ The typeface used in the logo is [AZONIX](https://www.dafont.com/azonix.font), b
 ## Known limitations
 
 * A hard system crash on a node might leave behind stranded IP allocations, so if you have a trashing system, this might exhaust IPs.
-  - Potentially we need an operator to ensure data is clean, even if just at some kind of interval (e.g. with a cron job)
+  * Potentially we need an operator to ensure data is clean, even if just at some kind of interval (e.g. with a cron job)
 * There's probably a lot of comparison of IP addresses that could be optimized, lots of string conversion.
 * The etcd method has a number of limitations, in that it uses an all ASCII methodology. If this was binary, it could probably store more and have more efficient IP address comparison.
 * Unlikely to work in Canada, apparently it would have to be "where aboots?" for Canadians to be able to operate it.
