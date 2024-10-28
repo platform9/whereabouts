@@ -4,7 +4,7 @@ repo=platform9
 version ?= v0.6
 
 #registry_url ?= 514845858982.dkr.ecr.us-west-1.amazonaws.com
-registry_url ?= docker.io
+registry_url ?= quay.io
 
 image_name = ${registry_url}/platform9/whereabouts
 image_tag ?= $(version)-pmk-$(TEAMCITY_BUILD_ID)
