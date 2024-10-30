@@ -12,4 +12,5 @@
 *.out
 
 bin/
+build/
 /github.com/
