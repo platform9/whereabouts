@@ -4,6 +4,7 @@ repo=platform9
 version ?= v0.6
 
 #registry_url ?= 514845858982.dkr.ecr.us-west-1.amazonaws.com
+# We moved from ECR	to DockerHub to Quay
 registry_url ?= quay.io
 
 image_name = ${registry_url}/platform9/whereabouts
