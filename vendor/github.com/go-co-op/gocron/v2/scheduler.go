@@ -16,14 +16,37 @@ var _ Scheduler = (*scheduler)(nil)
 
 // Scheduler defines the interface for the Scheduler.
 type Scheduler interface {
+	// Jobs returns all the jobs currently in the scheduler.
 	Jobs() []Job
+	// NewJob creates a new job in the Scheduler. The job is scheduled per the provided
+	// definition when the Scheduler is started. If the Scheduler is already running
+	// the job will be scheduled when the Scheduler is started.
 	NewJob(JobDefinition, Task, ...JobOption) (Job, error)
+	// RemoveByTags removes all jobs that have at least one of the provided tags.
 	RemoveByTags(...string)
+	// RemoveJob removes the job with the provided id.
 	RemoveJob(uuid.UUID) error
-	Start()
-	StopJobs() error
+	// Shutdown should be called when you no longer need
+	// the Scheduler or Job's as the Scheduler cannot
+	// be restarted after calling Shutdown. This is similar
+	// to a Close or Cleanup method and is often deferred after
+	// starting the scheduler.
 	Shutdown() error
+	// Start begins scheduling jobs for execution based
+	// on each job's definition. Job's added to an already
+	// running scheduler will be scheduled immediately based
+	// on definition. Start is non-blocking.
+	Start()
+	// StopJobs stops the execution of all jobs in the scheduler.
+	// This can be useful in situations where jobs need to be
+	// paused globally and then restarted with Start().
+	StopJobs() error
+	// Update replaces the existing Job's JobDefinition with the provided
+	// JobDefinition. The Job's Job.ID() remains the same.
 	Update(uuid.UUID, JobDefinition, Task, ...JobOption) (Job, error)
+	// JobsWaitingInQueue number of jobs waiting in Queue in case of LimitModeWait
+	// In case of LimitModeReschedule or no limit it will be always zero
+	JobsWaitingInQueue() int
 }
 
 // -----------------------------------------------
@@ -33,26 +56,50 @@ type Scheduler interface {
 // -----------------------------------------------
 
 type scheduler struct {
-	shutdownCtx      context.Context
-	shutdownCancel   context.CancelFunc
-	exec             executor
-	jobs             map[uuid.UUID]internalJob
-	location         *time.Location
-	clock            clockwork.Clock
-	started          bool
+	// context used for shutting down
+	shutdownCtx context.Context
+	// cancel used to signal scheduler should shut down
+	shutdownCancel context.CancelFunc
+	// the executor, which actually runs the jobs sent to it via the scheduler
+	exec executor
+	// the map of jobs registered in the scheduler
+	jobs map[uuid.UUID]internalJob
+	// the location used by the scheduler for scheduling when relevant
+	location *time.Location
+	// whether the scheduler has been started or not
+	started bool
+	// globally applied JobOption's set on all jobs added to the scheduler
+	// note: individually set JobOption's take precedence.
 	globalJobOptions []JobOption
-	logger           Logger
+	// the scheduler's logger
+	logger Logger
 
-	startCh            chan struct{}
-	startedCh          chan struct{}
-	stopCh             chan struct{}
-	stopErrCh          chan error
-	allJobsOutRequest  chan allJobsOutRequest
-	jobOutRequestCh    chan jobOutRequest
-	runJobRequestCh    chan runJobRequest
-	newJobCh           chan internalJob
-	removeJobCh        chan uuid.UUID
+	// used to tell the scheduler to start
+	startCh chan struct{}
+	// used to report that the scheduler has started
+	startedCh chan struct{}
+	// used to tell the scheduler to stop
+	stopCh chan struct{}
+	// used to report that the scheduler has stopped
+	stopErrCh chan error
+	// used to send all the jobs out when a request is made by the client
+	allJobsOutRequest chan allJobsOutRequest
+	// used to send a jobs out when a request is made by the client
+	jobOutRequestCh chan jobOutRequest
+	// used to run a job on-demand when requested by the client
+	runJobRequestCh chan runJobRequest
+	// new jobs are received here
+	newJobCh chan newJobIn
+	// requests from the client to remove jobs by ID are received here
+	removeJobCh chan uuid.UUID
+	// requests from the client to remove jobs by tags are received here
 	removeJobsByTagsCh chan []string
+}
+
+type newJobIn struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	job    internalJob
 }
 
 type jobOutRequest struct {
@@ -80,13 +127,15 @@ func NewScheduler(options ...SchedulerOption) (Scheduler, error) {
 	exec := executor{
 		stopCh:           make(chan struct{}),
 		stopTimeout:      time.Second * 10,
-		singletonRunners: make(map[uuid.UUID]singletonRunner),
+		singletonRunners: nil,
 		logger:           &noOpLogger{},
+		clock:            clockwork.NewRealClock(),
 
-		jobsIn:        make(chan jobIn),
-		jobIDsOut:     make(chan uuid.UUID),
-		jobOutRequest: make(chan jobOutRequest, 1000),
-		done:          make(chan error),
+		jobsIn:                 make(chan jobIn),
+		jobsOutForRescheduling: make(chan uuid.UUID),
+		jobsOutCompleted:       make(chan uuid.UUID),
+		jobOutRequest:          make(chan jobOutRequest, 1000),
+		done:                   make(chan error),
 	}
 
 	s := &scheduler{
@@ -95,10 +144,9 @@ func NewScheduler(options ...SchedulerOption) (Scheduler, error) {
 		exec:           exec,
 		jobs:           make(map[uuid.UUID]internalJob),
 		location:       time.Local,
-		clock:          clockwork.NewRealClock(),
 		logger:         &noOpLogger{},
 
-		newJobCh:           make(chan internalJob),
+		newJobCh:           make(chan newJobIn),
 		removeJobCh:        make(chan uuid.UUID),
 		removeJobsByTagsCh: make(chan []string),
 		startCh:            make(chan struct{}),
@@ -121,11 +169,14 @@ func NewScheduler(options ...SchedulerOption) (Scheduler, error) {
 		s.logger.Info("gocron: new scheduler created")
 		for {
 			select {
-			case id := <-s.exec.jobIDsOut:
-				s.selectExecJobIDsOut(id)
+			case id := <-s.exec.jobsOutForRescheduling:
+				s.selectExecJobsOutForRescheduling(id)
 
-			case j := <-s.newJobCh:
-				s.selectNewJob(j)
+			case id := <-s.exec.jobsOutCompleted:
+				s.selectExecJobsOutCompleted(id)
+
+			case in := <-s.newJobCh:
+				s.selectNewJob(in)
 
 			case id := <-s.removeJobCh:
 				s.selectRemoveJob(id)
@@ -208,6 +259,17 @@ func (s *scheduler) selectAllJobsOutRequest(out allJobsOutRequest) {
 		outJobs[counter] = s.jobFromInternalJob(j)
 		counter++
 	}
+	slices.SortFunc(outJobs, func(a, b Job) int {
+		aID, bID := a.ID().String(), b.ID().String()
+		switch {
+		case aID < bID:
+			return -1
+		case aID > bID:
+			return 1
+		default:
+			return 0
+		}
+	})
 	select {
 	case <-s.shutdownCtx.Done():
 	case out.outChan <- outJobs:
@@ -248,10 +310,100 @@ func (s *scheduler) selectRemoveJob(id uuid.UUID) {
 	delete(s.jobs, id)
 }
 
-func (s *scheduler) selectExecJobIDsOut(id uuid.UUID) {
-	j := s.jobs[id]
-	j.lastRun = j.nextRun
+// Jobs coming back from the executor to the scheduler that
+// need to be evaluated for rescheduling.
+func (s *scheduler) selectExecJobsOutForRescheduling(id uuid.UUID) {
+	select {
+	case <-s.shutdownCtx.Done():
+		return
+	default:
+	}
+	j, ok := s.jobs[id]
+	if !ok {
+		// the job was removed while it was running, and
+		// so we don't need to reschedule it.
+		return
+	}
 
+	if j.stopTimeReached(s.now()) {
+		return
+	}
+
+	scheduleFrom := j.lastRun
+	if len(j.nextScheduled) > 0 {
+		// always grab the last element in the slice as that is the furthest
+		// out in the future and the time from which we want to calculate
+		// the subsequent next run time.
+		slices.SortStableFunc(j.nextScheduled, ascendingTime)
+		scheduleFrom = j.nextScheduled[len(j.nextScheduled)-1]
+	}
+
+	if scheduleFrom.IsZero() {
+		scheduleFrom = j.startTime
+	}
+
+	next := j.next(scheduleFrom)
+	if next.IsZero() {
+		// the job's next function will return zero for OneTime jobs.
+		// since they are one time only, they do not need rescheduling.
+		return
+	}
+
+	if next.Before(s.now()) {
+		// in some cases the next run time can be in the past, for example:
+		// - the time on the machine was incorrect and has been synced with ntp
+		// - the machine went to sleep, and woke up some time later
+		// in those cases, we want to increment to the next run in the future
+		// and schedule the job for that time.
+		for next.Before(s.now()) {
+			next = j.next(next)
+		}
+	}
+
+	// Clean up any existing timer to prevent leaks
+	if j.timer != nil {
+		j.timer.Stop()
+		j.timer = nil // Ensure timer is cleared for GC
+	}
+
+	j.nextScheduled = append(j.nextScheduled, next)
+	j.timer = s.exec.clock.AfterFunc(next.Sub(s.now()), func() {
+		// set the actual timer on the job here and listen for
+		// shut down events so that the job doesn't attempt to
+		// run if the scheduler has been shutdown.
+		select {
+		case <-s.shutdownCtx.Done():
+			return
+		case s.exec.jobsIn <- jobIn{
+			id:            j.id,
+			shouldSendOut: true,
+		}:
+		}
+	})
+	// update the job with its new next and last run times and timer.
+	s.jobs[id] = j
+}
+
+func (s *scheduler) selectExecJobsOutCompleted(id uuid.UUID) {
+	j, ok := s.jobs[id]
+	if !ok {
+		return
+	}
+
+	// if the job has nextScheduled time in the past,
+	// we need to remove any that are in the past.
+	var newNextScheduled []time.Time
+	for _, t := range j.nextScheduled {
+		if t.Before(s.now()) {
+			continue
+		}
+		newNextScheduled = append(newNextScheduled, t)
+	}
+	j.nextScheduled = newNextScheduled
+
+	// if the job has a limited number of runs set, we need to
+	// check how many runs have occurred and stop running this
+	// job if it has reached the limit.
 	if j.limitRunsTo != nil {
 		j.limitRunsTo.runCount = j.limitRunsTo.runCount + 1
 		if j.limitRunsTo.runCount == j.limitRunsTo.limit {
@@ -266,21 +418,7 @@ func (s *scheduler) selectExecJobIDsOut(id uuid.UUID) {
 		}
 	}
 
-	next := j.next(j.lastRun)
-	if next.IsZero() {
-		return
-	}
-	j.nextRun = next
-	j.timer = s.clock.AfterFunc(next.Sub(s.now()), func() {
-		select {
-		case <-s.shutdownCtx.Done():
-			return
-		case s.exec.jobsIn <- jobIn{
-			id:            j.id,
-			shouldSendOut: true,
-		}:
-		}
-	})
+	j.lastRun = s.now()
 	s.jobs[id] = j
 }
 
@@ -294,7 +432,8 @@ func (s *scheduler) selectJobOutRequest(out jobOutRequest) {
 	close(out.outChan)
 }
 
-func (s *scheduler) selectNewJob(j internalJob) {
+func (s *scheduler) selectNewJob(in newJobIn) {
+	j := in.job
 	if s.started {
 		next := j.startTime
 		if j.startImmediately {
@@ -312,7 +451,7 @@ func (s *scheduler) selectNewJob(j internalJob) {
 			}
 
 			id := j.id
-			j.timer = s.clock.AfterFunc(next.Sub(s.now()), func() {
+			j.timer = s.exec.clock.AfterFunc(next.Sub(s.now()), func() {
 				select {
 				case <-s.shutdownCtx.Done():
 				case s.exec.jobsIn <- jobIn{
@@ -322,10 +461,12 @@ func (s *scheduler) selectNewJob(j internalJob) {
 				}
 			})
 		}
-		j.nextRun = next
+		j.startTime = next
+		j.nextScheduled = append(j.nextScheduled, next)
 	}
 
 	s.jobs[j.id] = j
+	in.cancel()
 }
 
 func (s *scheduler) selectRemoveJobsByTags(tags []string) {
@@ -362,7 +503,7 @@ func (s *scheduler) selectStart() {
 			}
 
 			jobID := id
-			j.timer = s.clock.AfterFunc(next.Sub(s.now()), func() {
+			j.timer = s.exec.clock.AfterFunc(next.Sub(s.now()), func() {
 				select {
 				case <-s.shutdownCtx.Done():
 				case s.exec.jobsIn <- jobIn{
@@ -372,7 +513,8 @@ func (s *scheduler) selectStart() {
 				}
 			})
 		}
-		j.nextRun = next
+		j.startTime = next
+		j.nextScheduled = append(j.nextScheduled, next)
 		s.jobs[id] = j
 	}
 	select {
@@ -389,15 +531,16 @@ func (s *scheduler) selectStart() {
 // -----------------------------------------------
 
 func (s *scheduler) now() time.Time {
-	return s.clock.Now().In(s.location)
+	return s.exec.clock.Now().In(s.location)
 }
 
 func (s *scheduler) jobFromInternalJob(in internalJob) job {
 	return job{
-		id:            in.id,
-		name:          in.name,
-		tags:          slices.Clone(in.tags),
-		jobOutRequest: s.jobOutRequestCh,
+		in.id,
+		in.name,
+		slices.Clone(in.tags),
+		s.jobOutRequestCh,
+		s.runJobRequestCh,
 	}
 }
 
@@ -419,6 +562,70 @@ func (s *scheduler) Jobs() []Job {
 
 func (s *scheduler) NewJob(jobDefinition JobDefinition, task Task, options ...JobOption) (Job, error) {
 	return s.addOrUpdateJob(uuid.Nil, jobDefinition, task, options)
+}
+
+func (s *scheduler) verifyInterfaceVariadic(taskFunc reflect.Value, tsk task, variadicStart int) error {
+	ifaceType := taskFunc.Type().In(variadicStart).Elem()
+	for i := variadicStart; i < len(tsk.parameters); i++ {
+		if !reflect.TypeOf(tsk.parameters[i]).Implements(ifaceType) {
+			return ErrNewJobWrongTypeOfParameters
+		}
+	}
+	return nil
+}
+
+func (s *scheduler) verifyVariadic(taskFunc reflect.Value, tsk task, variadicStart int) error {
+	if err := s.verifyNonVariadic(taskFunc, tsk, variadicStart); err != nil {
+		return err
+	}
+	parameterType := taskFunc.Type().In(variadicStart).Elem().Kind()
+	if parameterType == reflect.Interface {
+		return s.verifyInterfaceVariadic(taskFunc, tsk, variadicStart)
+	}
+	if parameterType == reflect.Pointer {
+		parameterType = reflect.Indirect(reflect.ValueOf(taskFunc.Type().In(variadicStart))).Kind()
+	}
+
+	for i := variadicStart; i < len(tsk.parameters); i++ {
+		argumentType := reflect.TypeOf(tsk.parameters[i]).Kind()
+		if argumentType == reflect.Interface || argumentType == reflect.Pointer {
+			argumentType = reflect.TypeOf(tsk.parameters[i]).Elem().Kind()
+		}
+		if argumentType != parameterType {
+			return ErrNewJobWrongTypeOfParameters
+		}
+	}
+	return nil
+}
+
+func (s *scheduler) verifyNonVariadic(taskFunc reflect.Value, tsk task, length int) error {
+	for i := 0; i < length; i++ {
+		t1 := reflect.TypeOf(tsk.parameters[i]).Kind()
+		if t1 == reflect.Interface || t1 == reflect.Pointer {
+			t1 = reflect.TypeOf(tsk.parameters[i]).Elem().Kind()
+		}
+		t2 := reflect.New(taskFunc.Type().In(i)).Elem().Kind()
+		if t2 == reflect.Interface || t2 == reflect.Pointer {
+			t2 = reflect.Indirect(reflect.ValueOf(taskFunc.Type().In(i))).Kind()
+		}
+		if t1 != t2 {
+			return ErrNewJobWrongTypeOfParameters
+		}
+	}
+	return nil
+}
+
+func (s *scheduler) verifyParameterType(taskFunc reflect.Value, tsk task) error {
+	isVariadic := taskFunc.Type().IsVariadic()
+	if isVariadic {
+		variadicStart := taskFunc.Type().NumIn() - 1
+		return s.verifyVariadic(taskFunc, tsk, variadicStart)
+	}
+	expectedParameterLength := taskFunc.Type().NumIn()
+	if len(tsk.parameters) != expectedParameterLength {
+		return ErrNewJobWrongNumberOfParameters
+	}
+	return s.verifyNonVariadic(taskFunc, tsk, expectedParameterLength)
 }
 
 func (s *scheduler) addOrUpdateJob(id uuid.UUID, definition JobDefinition, taskWrapper Task, options []JobOption) (Job, error) {
@@ -455,23 +662,8 @@ func (s *scheduler) addOrUpdateJob(id uuid.UUID, definition JobDefinition, taskW
 		return nil, ErrNewJobTaskNotFunc
 	}
 
-	expectedParameterLength := taskFunc.Type().NumIn()
-	if len(tsk.parameters) != expectedParameterLength {
-		return nil, ErrNewJobWrongNumberOfParameters
-	}
-
-	for i := 0; i < expectedParameterLength; i++ {
-		t1 := reflect.TypeOf(tsk.parameters[i]).Kind()
-		if t1 == reflect.Interface || t1 == reflect.Pointer {
-			t1 = reflect.TypeOf(tsk.parameters[i]).Elem().Kind()
-		}
-		t2 := reflect.New(taskFunc.Type().In(i)).Elem().Kind()
-		if t2 == reflect.Interface || t2 == reflect.Pointer {
-			t2 = reflect.Indirect(reflect.ValueOf(taskFunc.Type().In(i))).Kind()
-		}
-		if t1 != t2 {
-			return nil, ErrNewJobWrongTypeOfParameters
-		}
+	if err := s.verifyParameterType(taskFunc, tsk); err != nil {
+		return nil, err
 	}
 
 	j.name = runtime.FuncForPC(taskFunc.Pointer()).Name()
@@ -480,34 +672,39 @@ func (s *scheduler) addOrUpdateJob(id uuid.UUID, definition JobDefinition, taskW
 
 	// apply global job options
 	for _, option := range s.globalJobOptions {
-		if err := option(&j); err != nil {
+		if err := option(&j, s.now()); err != nil {
 			return nil, err
 		}
 	}
 
 	// apply job specific options, which take precedence
 	for _, option := range options {
-		if err := option(&j); err != nil {
+		if err := option(&j, s.now()); err != nil {
 			return nil, err
 		}
 	}
 
-	if err := definition.setup(&j, s.location); err != nil {
+	if err := definition.setup(&j, s.location, s.exec.clock.Now()); err != nil {
 		return nil, err
 	}
 
+	newJobCtx, newJobCancel := context.WithCancel(context.Background())
 	select {
 	case <-s.shutdownCtx.Done():
-	case s.newJobCh <- j:
+	case s.newJobCh <- newJobIn{
+		ctx:    newJobCtx,
+		cancel: newJobCancel,
+		job:    j,
+	}:
 	}
 
-	return &job{
-		id:            j.id,
-		name:          j.name,
-		tags:          slices.Clone(j.tags),
-		jobOutRequest: s.jobOutRequestCh,
-		runJobRequest: s.runJobRequestCh,
-	}, nil
+	select {
+	case <-newJobCtx.Done():
+	case <-s.shutdownCtx.Done():
+	}
+
+	out := s.jobFromInternalJob(j)
+	return &out, nil
 }
 
 func (s *scheduler) RemoveByTags(tags ...string) {
@@ -530,10 +727,6 @@ func (s *scheduler) RemoveJob(id uuid.UUID) error {
 	return nil
 }
 
-// Start begins scheduling jobs for execution based
-// on each job's definition. Job's added to an already
-// running scheduler will be scheduled immediately based
-// on definition.
 func (s *scheduler) Start() {
 	select {
 	case <-s.shutdownCtx.Done():
@@ -542,9 +735,6 @@ func (s *scheduler) Start() {
 	}
 }
 
-// StopJobs stops the execution of all jobs in the scheduler.
-// This can be useful in situations where jobs need to be
-// paused globally and then restarted with Start().
 func (s *scheduler) StopJobs() error {
 	select {
 	case <-s.shutdownCtx.Done():
@@ -559,9 +749,6 @@ func (s *scheduler) StopJobs() error {
 	}
 }
 
-// Shutdown should be called when you no longer need
-// the Scheduler or Job's as the Scheduler cannot
-// be restarted after calling Shutdown.
 func (s *scheduler) Shutdown() error {
 	s.shutdownCancel()
 	select {
@@ -572,10 +759,15 @@ func (s *scheduler) Shutdown() error {
 	}
 }
 
-// Update replaces the existing Job's JobDefinition with the provided
-// JobDefinition. The Job's Job.ID() remains the same.
 func (s *scheduler) Update(id uuid.UUID, jobDefinition JobDefinition, task Task, options ...JobOption) (Job, error) {
 	return s.addOrUpdateJob(id, jobDefinition, task, options)
+}
+
+func (s *scheduler) JobsWaitingInQueue() int {
+	if s.exec.limitMode != nil && s.exec.limitMode.mode == LimitModeWait {
+		return len(s.exec.limitMode.in)
+	}
+	return 0
 }
 
 // -----------------------------------------------
@@ -595,7 +787,7 @@ func WithClock(clock clockwork.Clock) SchedulerOption {
 		if clock == nil {
 			return ErrWithClockNil
 		}
-		s.clock = clock
+		s.exec.clock = clock
 		return nil
 	}
 }
@@ -678,6 +870,14 @@ const (
 // WithLimitConcurrentJobs sets the limit and mode to be used by the
 // Scheduler for limiting the number of jobs that may be running at
 // a given time.
+//
+// Note: the limit mode selected for WithLimitConcurrentJobs takes initial
+// precedence in the event you are also running a limit mode at the job level
+// using WithSingletonMode.
+//
+// Warning: a single time consuming job can dominate your limit in the event
+// you are running both the scheduler limit WithLimitConcurrentJobs(1, LimitModeWait)
+// and a job limit WithSingletonMode(LimitModeReschedule).
 func WithLimitConcurrentJobs(limit uint, mode LimitMode) SchedulerOption {
 	return func(s *scheduler) error {
 		if limit == 0 {
@@ -731,6 +931,17 @@ func WithStopTimeout(timeout time.Duration) SchedulerOption {
 			return ErrWithStopTimeoutZeroOrNegative
 		}
 		s.exec.stopTimeout = timeout
+		return nil
+	}
+}
+
+// WithMonitor sets the metrics provider to be used by the Scheduler.
+func WithMonitor(monitor Monitor) SchedulerOption {
+	return func(s *scheduler) error {
+		if monitor == nil {
+			return ErrWithMonitorNil
+		}
+		s.exec.monitor = monitor
 		return nil
 	}
 }
