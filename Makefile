@@ -25,5 +25,5 @@ push: image
 scan: 
 	mkdir -p build
 	mkdir -p build/whereabouts
-	docker run -v $(BUILD_ROOT)/whereabouts:/out -v /var/run/docker.sock:/var/run/docker.sock  aquasec/trivy image -s CRITICAL,HIGH -f json  --vuln-type library -o /out/library_vulnerabilities.json --exit-code 22 ${TAG}
-	docker run -v $(BUILD_ROOT)/whereabouts:/out -v /var/run/docker.sock:/var/run/docker.sock  aquasec/trivy image -s CRITICAL,HIGH -f json  --vuln-type os -o /out/os_vulnerabilities.json --exit-code 22 ${TAG}
+	docker run -v $(BUILD_ROOT)/whereabouts:/out -v /var/run/docker.sock:/var/run/docker.sock  aquasec/trivy:0.69.3 image -s CRITICAL,HIGH -f json  --vuln-type library -o /out/library_vulnerabilities.json --exit-code 22 ${TAG}
+	docker run -v $(BUILD_ROOT)/whereabouts:/out -v /var/run/docker.sock:/var/run/docker.sock  aquasec/trivy:0.69.3 image -s CRITICAL,HIGH -f json  --vuln-type os -o /out/os_vulnerabilities.json --exit-code 22 ${TAG}
