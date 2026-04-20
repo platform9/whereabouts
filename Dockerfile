@@ -5,7 +5,7 @@ WORKDIR $GOPATH/src/github.com/dougbtv/whereabouts
 COPY . .
 RUN ./hack/build-go.sh
 
-FROM alpine:latest
+FROM alpine:3
 LABEL org.opencontainers.image.source https://github.com/k8snetworkplumbingwg/whereabouts
 COPY --from=0 /go/src/github.com/dougbtv/whereabouts/bin/whereabouts .
 COPY --from=0 /go/src/github.com/dougbtv/whereabouts/bin/ip-reconciler .
